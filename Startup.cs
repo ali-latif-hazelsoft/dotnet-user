@@ -4,12 +4,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using dotnet_user.Data;
+using dotnet_user.Models;
 using dotnet_user.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -69,7 +71,10 @@ namespace dotnet_user
             });
             services.AddAutoMapper(typeof(Startup));
             services.AddScoped<IUserService, UserService>();
-            services.AddScoped<IAuthRepository, AuthRepository>();
+            services
+                .AddIdentity<ApplicationUser, IdentityRole<int>>()
+                .AddEntityFrameworkStores<DataContext>()
+                .AddDefaultTokenProviders();
             services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -87,6 +92,7 @@ namespace dotnet_user
                     };
                 });
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+            // services.AddHttpContextAccessor();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
