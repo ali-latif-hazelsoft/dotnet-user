@@ -2,10 +2,13 @@ using System;
 using System.Threading.Tasks;
 using dotnet_user.Dtos.User;
 using dotnet_user.Services.UserService;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace dotnet_user.Controllers
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [ApiController]
     [Route("[controller]")]
     public class UserController : BaseApiController
@@ -29,16 +32,6 @@ namespace dotnet_user.Controllers
                 return "User data is required.";
             }
 
-            if (string.IsNullOrWhiteSpace(newUser.FirstName))
-            {
-                return "First name is required.";
-            }
-
-            if (string.IsNullOrWhiteSpace(newUser.LastName))
-            {
-                return "Last name is required.";
-            }
-
             if (string.IsNullOrWhiteSpace(newUser.Email))
             {
                 return "Email is required.";
@@ -57,16 +50,6 @@ namespace dotnet_user.Controllers
             if (!IsValidId(updatedUser.Id))
             {
                 return "Invalid id.";
-            }
-
-            if (string.IsNullOrWhiteSpace(updatedUser.FirstName))
-            {
-                return "First name is required.";
-            }
-
-            if (string.IsNullOrWhiteSpace(updatedUser.LastName))
-            {
-                return "Last name is required.";
             }
 
             if (string.IsNullOrWhiteSpace(updatedUser.Email))

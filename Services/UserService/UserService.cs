@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using AutoMapper;
 using dotnet_user.Constants;
@@ -8,6 +9,7 @@ using dotnet_user.Data;
 using dotnet_user.Dtos.User;
 using dotnet_user.Helpers;
 using dotnet_user.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace dotnet_user.Services.UserService
@@ -16,11 +18,37 @@ namespace dotnet_user.Services.UserService
     {
         private readonly IMapper _mapper;
         private readonly DataContext _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public UserService(IMapper mapper, DataContext context)
+        public UserService(
+            IMapper mapper,
+            DataContext context,
+            IHttpContextAccessor httpContextAccessor
+        )
         {
             _mapper = mapper;
             _context = context;
+            _httpContextAccessor = httpContextAccessor;
+        }
+
+        private int GetLoggedInUserId()
+        {
+            var userIdValue = _httpContextAccessor.HttpContext?.User?.FindFirstValue(
+                ClaimTypes.NameIdentifier
+            );
+
+            if (!int.TryParse(userIdValue, out int userId))
+            {
+                throw new UnauthorizedAccessException("No authenticated user found.");
+            }
+
+            return userId;
+        }
+
+        private IQueryable<User> GetLoggedInUserUsersQuery()
+        {
+            int loggedInUserId = GetLoggedInUserId();
+            return _context.Users.AsNoTracking().Where(u => u.ApplicationUserId == loggedInUserId);
         }
 
         private static string NormalizeEmail(string email)
@@ -32,7 +60,7 @@ namespace dotnet_user.Services.UserService
         {
             query ??= new UserQueryDto();
 
-            IQueryable<User> usersQuery = _context.Users.AsNoTracking();
+            IQueryable<User> usersQuery = GetLoggedInUserUsersQuery();
 
             if (!string.IsNullOrWhiteSpace(query.SearchTerm))
             {
@@ -73,7 +101,11 @@ namespace dotnet_user.Services.UserService
 
         public async Task<GetUserDto> GetUserById(int id)
         {
-            User user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+            int loggedInUserId = GetLoggedInUserId();
+
+            User user = await _context
+                .Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == id && u.ApplicationUserId == loggedInUserId);
 
             if (user == null)
             {
@@ -85,10 +117,14 @@ namespace dotnet_user.Services.UserService
 
         public async Task<GetUserDto> AddUser(AddUserDto newUser)
         {
+            int loggedInUserId = GetLoggedInUserId();
+
             string email = NormalizeEmail(newUser.Email);
 
             bool emailExists = await _context.Users.AnyAsync(u =>
-                u.Email != null && NormalizeEmail(u.Email) == email
+                u.ApplicationUserId == loggedInUserId
+                && u.Email != null
+                && u.Email.ToLower() == email
             );
 
             if (emailExists)
@@ -98,6 +134,7 @@ namespace dotnet_user.Services.UserService
 
             User user = _mapper.Map<User>(newUser);
             user.Email = newUser.Email.Trim();
+            user.ApplicationUserId = loggedInUserId;
 
             await _context.Users.AddAsync(user);
             await _context.SaveChangesAsync();
@@ -107,7 +144,11 @@ namespace dotnet_user.Services.UserService
 
         public async Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser)
         {
-            User user = await _context.Users.FirstOrDefaultAsync(u => u.Id == updatedUser.Id);
+            int loggedInUserId = GetLoggedInUserId();
+
+            User user = await _context.Users.FirstOrDefaultAsync(u =>
+                u.Id == updatedUser.Id && u.ApplicationUserId == loggedInUserId
+            );
 
             if (user == null)
             {
@@ -117,7 +158,10 @@ namespace dotnet_user.Services.UserService
             string email = NormalizeEmail(updatedUser.Email);
 
             bool emailExists = await _context.Users.AnyAsync(u =>
-                u.Id != updatedUser.Id && u.Email != null && NormalizeEmail(u.Email) == email
+                u.ApplicationUserId == loggedInUserId
+                && u.Id != updatedUser.Id
+                && u.Email != null
+                && NormalizeEmail(u.Email) == email
             );
 
             if (emailExists)
@@ -135,7 +179,11 @@ namespace dotnet_user.Services.UserService
 
         public async Task<string> DeleteUser(int id)
         {
-            User user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            int loggedInUserId = GetLoggedInUserId();
+
+            User user = await _context.Users.FirstOrDefaultAsync(u =>
+                u.Id == id && u.ApplicationUserId == loggedInUserId
+            );
 
             if (user == null)
             {
