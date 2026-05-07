@@ -17,7 +17,67 @@ namespace dotnet_user.Controllers
             _userService = userService;
         }
 
-        [HttpGet]
+        private static bool IsValidId(int id)
+        {
+            return id > 0;
+        }
+
+        private static string ValidateAddUser(AddUserDto newUser)
+        {
+            if (newUser == null)
+            {
+                return "User data is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(newUser.FirstName))
+            {
+                return "First name is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(newUser.LastName))
+            {
+                return "Last name is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(newUser.Email))
+            {
+                return "Email is required.";
+            }
+
+            return null;
+        }
+
+        private static string ValidateUpdateUser(UpdateUserDto updatedUser)
+        {
+            if (updatedUser == null)
+            {
+                return "User data is required.";
+            }
+
+            if (!IsValidId(updatedUser.Id))
+            {
+                return "Invalid id.";
+            }
+
+            if (string.IsNullOrWhiteSpace(updatedUser.FirstName))
+            {
+                return "First name is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(updatedUser.LastName))
+            {
+                return "Last name is required.";
+            }
+
+            if (string.IsNullOrWhiteSpace(updatedUser.Email))
+            {
+                return "Email is required.";
+            }
+
+            return null;
+        }
+
+        [HttpGet("GetAll")]
         public async Task<IActionResult> GetAllUsers([FromQuery] UserQueryDto query)
         {
             try
@@ -34,6 +94,11 @@ namespace dotnet_user.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetUserById(int id)
         {
+            if (!IsValidId(id))
+            {
+                return BadRequest(new { message = "Invalid id." });
+            }
+
             try
             {
                 var user = await _userService.GetUserById(id);
@@ -48,6 +113,12 @@ namespace dotnet_user.Controllers
         [HttpPost]
         public async Task<IActionResult> AddUser([FromBody] AddUserDto newUser)
         {
+            string validationError = ValidateAddUser(newUser);
+            if (validationError != null)
+            {
+                return BadRequest(new { message = validationError });
+            }
+
             try
             {
                 var user = await _userService.AddUser(newUser);
@@ -62,6 +133,12 @@ namespace dotnet_user.Controllers
         [HttpPut]
         public async Task<IActionResult> UpdateUser([FromBody] UpdateUserDto updatedUser)
         {
+            string validationError = ValidateUpdateUser(updatedUser);
+            if (validationError != null)
+            {
+                return BadRequest(new { message = validationError });
+            }
+
             try
             {
                 var user = await _userService.UpdateUser(updatedUser);
@@ -76,6 +153,11 @@ namespace dotnet_user.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
+            if (!IsValidId(id))
+            {
+                return BadRequest(new { message = "Invalid id." });
+            }
+
             try
             {
                 var message = await _userService.DeleteUser(id);

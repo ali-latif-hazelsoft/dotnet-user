@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Threading.Tasks;
 using AutoMapper;
 using dotnet_user.Constants;
@@ -87,17 +85,7 @@ namespace dotnet_user.Services.UserService
 
         public async Task<GetUserDto> AddUser(AddUserDto newUser)
         {
-            if (newUser == null)
-            {
-                throw new ArgumentNullException(nameof(newUser), "User data is required.");
-            }
-
             string email = NormalizeEmail(newUser.Email);
-
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                throw new ArgumentException("Email is required.");
-            }
 
             bool emailExists = await _context.Users.AnyAsync(u =>
                 u.Email != null && NormalizeEmail(u.Email) == email
@@ -119,11 +107,6 @@ namespace dotnet_user.Services.UserService
 
         public async Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser)
         {
-            if (updatedUser == null)
-            {
-                throw new ArgumentNullException(nameof(updatedUser), "User data is required.");
-            }
-
             User user = await _context.Users.FirstOrDefaultAsync(u => u.Id == updatedUser.Id);
 
             if (user == null)
@@ -132,11 +115,6 @@ namespace dotnet_user.Services.UserService
             }
 
             string email = NormalizeEmail(updatedUser.Email);
-
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                throw new ArgumentException("Email is required.");
-            }
 
             bool emailExists = await _context.Users.AnyAsync(u =>
                 u.Id != updatedUser.Id && u.Email != null && NormalizeEmail(u.Email) == email
