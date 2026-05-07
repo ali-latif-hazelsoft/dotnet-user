@@ -2,14 +2,13 @@ using System;
 using System.Threading.Tasks;
 using dotnet_user.Dtos.User;
 using dotnet_user.Services.UserService;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace dotnet_user.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class UserController : ControllerBase
+    public class UserController : BaseApiController
     {
         private readonly IUserService _userService;
 
@@ -18,38 +17,17 @@ namespace dotnet_user.Controllers
             _userService = userService;
         }
 
-        private IActionResult HandleServiceError(string message)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-                return BadRequest();
-
-            if (message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-                return NotFound(new { success = false, message });
-
-            if (message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-                return Conflict(new { success = false, message });
-
-            if (message.Contains("required", StringComparison.OrdinalIgnoreCase))
-                return BadRequest(new { success = false, message });
-
-            return BadRequest(new { success = false, message });
-        }
-
         [HttpGet]
         public async Task<IActionResult> GetAllUsers([FromQuery] UserQueryDto query)
         {
             try
             {
-                var response = await _userService.GetAllUsers(query);
-
-                if (!response.Success)
-                    return HandleServiceError(response.Message);
-
-                return Ok(response);
+                var users = await _userService.GetAllUsers(query);
+                return OkResponse(users, "Users fetched successfully.");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return BadRequestResponse(ex);
             }
         }
 
@@ -58,16 +36,12 @@ namespace dotnet_user.Controllers
         {
             try
             {
-                var response = await _userService.GetUserById(id);
-
-                if (!response.Success)
-                    return HandleServiceError(response.Message);
-
-                return Ok(response);
+                var user = await _userService.GetUserById(id);
+                return OkResponse(user, "User fetched successfully.");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return BadRequestResponse(ex);
             }
         }
 
@@ -76,16 +50,12 @@ namespace dotnet_user.Controllers
         {
             try
             {
-                var response = await _userService.AddUser(newUser);
-
-                if (!response.Success)
-                    return HandleServiceError(response.Message);
-
-                return Ok(response);
+                var user = await _userService.AddUser(newUser);
+                return OkResponse(user, "User created successfully.");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return BadRequestResponse(ex);
             }
         }
 
@@ -94,16 +64,12 @@ namespace dotnet_user.Controllers
         {
             try
             {
-                var response = await _userService.UpdateUser(updatedUser);
-
-                if (!response.Success)
-                    return HandleServiceError(response.Message);
-
-                return Ok(response);
+                var user = await _userService.UpdateUser(updatedUser);
+                return OkResponse(user, "User updated successfully.");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return BadRequestResponse(ex);
             }
         }
 
@@ -112,16 +78,12 @@ namespace dotnet_user.Controllers
         {
             try
             {
-                var response = await _userService.DeleteUser(id);
-
-                if (!response.Success)
-                    return HandleServiceError(response.Message);
-
-                return Ok(response);
+                var message = await _userService.DeleteUser(id);
+                return OkResponse(message);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return BadRequestResponse(ex);
             }
         }
     }

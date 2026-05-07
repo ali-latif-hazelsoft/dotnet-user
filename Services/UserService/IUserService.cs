@@ -7,10 +7,10 @@ namespace dotnet_user.Services.UserService
 {
     public interface IUserService
     {
-        Task<ServiceResponse<PagedResponse<List<GetUserDto>>>> GetAllUsers(UserQueryDto query);
-        Task<ServiceResponse<GetUserDto>> GetUserById(int id);
-        Task<ServiceResponse<GetUserDto>> AddUser(AddUserDto newUser);
-        Task<ServiceResponse<GetUserDto>> UpdateUser(UpdateUserDto updatedUser);
-        Task<ServiceResponse<string>> DeleteUser(int id);
+        Task<PagedResponse<List<GetUserDto>>> GetAllUsers(UserQueryDto query);
+        Task<GetUserDto> GetUserById(int id);
+        Task<GetUserDto> AddUser(AddUserDto newUser);
+        Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser);
+        Task<string> DeleteUser(int id);
     }
 }
