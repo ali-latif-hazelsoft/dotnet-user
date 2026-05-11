@@ -5,10 +5,10 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using AutoMapper;
 using dotnet_user.Constants;
-using dotnet_user.Data;
 using dotnet_user.Dtos.User;
 using dotnet_user.Helpers;
 using dotnet_user.Models;
+using dotnet_user.Repositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,17 +17,17 @@ namespace dotnet_user.Services.UserService
     public class UserService : IUserService
     {
         private readonly IMapper _mapper;
-        private readonly DataContext _context;
+        private readonly IGenericRepository<User> _userRepository;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
         public UserService(
             IMapper mapper,
-            DataContext context,
+            IGenericRepository<User> userRepository,
             IHttpContextAccessor httpContextAccessor
         )
         {
             _mapper = mapper;
-            _context = context;
+            _userRepository = userRepository;
             _httpContextAccessor = httpContextAccessor;
         }
 
@@ -45,15 +45,13 @@ namespace dotnet_user.Services.UserService
             return userId;
         }
 
-        private IQueryable<User> GetLoggedInUserUsersQuery()
+        private IQueryable<User> GetLoggedInUserUsersQuery(bool asNoTracking = true)
         {
             int loggedInUserId = GetLoggedInUserId();
-            return _context.Users.AsNoTracking().Where(u => u.ApplicationUserId == loggedInUserId);
-        }
 
-        private static string NormalizeEmail(string email)
-        {
-            return email?.Trim().ToLowerInvariant() ?? string.Empty;
+            return _userRepository
+                .Query(asNoTracking)
+                .Where(u => u.ApplicationUserId == loggedInUserId);
         }
 
         public async Task<PagedResponse<List<GetUserDto>>> GetAllUsers(UserQueryDto query)
@@ -69,7 +67,7 @@ namespace dotnet_user.Services.UserService
                 usersQuery = usersQuery.Where(u =>
                     (u.FirstName != null && u.FirstName.ToLower().Contains(search))
                     || (u.LastName != null && u.LastName.ToLower().Contains(search))
-                    || (u.Email != null && NormalizeEmail(u.Email).Contains(search))
+                    || (u.Email != null && u.Email.Trim().ToLower().Contains(search))
                 );
             }
 
@@ -77,6 +75,7 @@ namespace dotnet_user.Services.UserService
 
             int pageNumber =
                 query.PageNumber <= 0 ? UserConstants.DefaultPageNumber : query.PageNumber;
+
             int pageSize = query.PageSize <= 0 ? UserConstants.DefaultPageSize : query.PageSize;
 
             int totalRecords = await usersQuery.CountAsync();
@@ -103,8 +102,8 @@ namespace dotnet_user.Services.UserService
         {
             int loggedInUserId = GetLoggedInUserId();
 
-            User user = await _context
-                .Users.AsNoTracking()
+            User user = await _userRepository
+                .Query()
                 .FirstOrDefaultAsync(u => u.Id == id && u.ApplicationUserId == loggedInUserId);
 
             if (user == null)
@@ -118,13 +117,12 @@ namespace dotnet_user.Services.UserService
         public async Task<GetUserDto> AddUser(AddUserDto newUser)
         {
             int loggedInUserId = GetLoggedInUserId();
+            string email = newUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
 
-            string email = NormalizeEmail(newUser.Email);
-
-            bool emailExists = await _context.Users.AnyAsync(u =>
+            bool emailExists = await _userRepository.AnyAsync(u =>
                 u.ApplicationUserId == loggedInUserId
                 && u.Email != null
-                && u.Email.ToLower() == email
+                && u.Email.Trim().ToLower() == email
             );
 
             if (emailExists)
@@ -136,8 +134,7 @@ namespace dotnet_user.Services.UserService
             user.Email = newUser.Email.Trim();
             user.ApplicationUserId = loggedInUserId;
 
-            await _context.Users.AddAsync(user);
-            await _context.SaveChangesAsync();
+            await _userRepository.AddAsync(user);
 
             return _mapper.Map<GetUserDto>(user);
         }
@@ -145,34 +142,31 @@ namespace dotnet_user.Services.UserService
         public async Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser)
         {
             int loggedInUserId = GetLoggedInUserId();
+            string email = updatedUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
 
-            User user = await _context.Users.FirstOrDefaultAsync(u =>
-                u.Id == updatedUser.Id && u.ApplicationUserId == loggedInUserId
-            );
+            User user = await _userRepository
+                .Query(false)
+                .FirstOrDefaultAsync(u =>
+                    u.Id == updatedUser.Id && u.ApplicationUserId == loggedInUserId
+                );
 
             if (user == null)
             {
                 throw new KeyNotFoundException("User not found.");
             }
 
-            string email = NormalizeEmail(updatedUser.Email);
-
-            bool emailExists = await _context.Users.AnyAsync(u =>
+            bool emailExists = await _userRepository.AnyAsync(u =>
                 u.ApplicationUserId == loggedInUserId
                 && u.Id != updatedUser.Id
                 && u.Email != null
-                && NormalizeEmail(u.Email) == email
+                && u.Email.Trim().ToLower() == email
             );
-
-            if (emailExists)
-            {
-                throw new ArgumentException("Email already exists.");
-            }
 
             _mapper.Map(updatedUser, user);
             user.Email = updatedUser.Email.Trim();
+            user.ApplicationUserId = loggedInUserId;
 
-            await _context.SaveChangesAsync();
+            _userRepository.Update(user);
 
             return _mapper.Map<GetUserDto>(user);
         }
@@ -181,17 +175,16 @@ namespace dotnet_user.Services.UserService
         {
             int loggedInUserId = GetLoggedInUserId();
 
-            User user = await _context.Users.FirstOrDefaultAsync(u =>
-                u.Id == id && u.ApplicationUserId == loggedInUserId
-            );
+            User user = await _userRepository
+                .Query(false)
+                .FirstOrDefaultAsync(u => u.Id == id && u.ApplicationUserId == loggedInUserId);
 
             if (user == null)
             {
                 throw new KeyNotFoundException("User not found.");
             }
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
+            _userRepository.Remove(user);
 
             return "User deleted successfully.";
         }
