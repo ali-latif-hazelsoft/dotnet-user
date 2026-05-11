@@ -104,10 +104,8 @@ namespace dotnet_user.Controllers
         [HttpPost("registerNewUser")]
         public async Task<IActionResult> InviteUser([FromBody] InviteUserDto request)
         {
-            Console.WriteLine("Registering Email");
             try
             {
-                Console.WriteLine("For Email" + request.Email);
                 if (string.IsNullOrWhiteSpace(request.Email))
                     return BadRequest("Email is required.");
 
@@ -117,8 +115,6 @@ namespace dotnet_user.Controllers
                     : request.Username.Trim();
 
                 var existingUserByEmail = await _userManager.FindByEmailAsync(email);
-                Console.WriteLine("existingUserByEmail:" + existingUserByEmail);
-                Console.WriteLine($"Is user null? {existingUserByEmail == null}");
 
                 var existingUserByName = await _userManager.FindByNameAsync(username);
                 if (existingUserByName != null)
@@ -137,7 +133,6 @@ namespace dotnet_user.Controllers
 
                 var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                 var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-                Console.WriteLine("encodedToken: " + encodedToken);
 
                 var confirmUrl =
                     $"{Request.Scheme}://{Request.Host}/auth/confirmEmailAndSetPassword?userId={user.Id}&token={encodedToken}";
@@ -170,7 +165,7 @@ namespace dotnet_user.Controllers
 
         [AllowAnonymous]
         [HttpPost("confirmEmailAndSetPassword")]
-        public async Task<IActionResult> SetPassword([FromForm] SetPasswordDto request)
+        public async Task<IActionResult> SetPassword([FromQuery] SetPasswordDto request)
         {
             try
             {
