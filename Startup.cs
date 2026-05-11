@@ -1,21 +1,17 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using dotnet_user.Data;
+using dotnet_user.Models;
+using dotnet_user.Repositories;
+using dotnet_user.Services.Email;
 using dotnet_user.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.HttpsPolicy;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -68,8 +64,23 @@ namespace dotnet_user
                 );
             });
             services.AddAutoMapper(typeof(Startup));
+            services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
             services.AddScoped<IUserService, UserService>();
-            services.AddScoped<IAuthRepository, AuthRepository>();
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+            services
+                .AddIdentity<ApplicationUser, IdentityRole<int>>()
+                .AddEntityFrameworkStores<DataContext>()
+                .AddDefaultTokenProviders();
+            services.Configure<IdentityOptions>(options =>
+            {
+                options.SignIn.RequireConfirmedEmail = true;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequiredLength = 6;
+            });
+
             services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -78,15 +89,14 @@ namespace dotnet_user
                     {
                         ValidateIssuerSigningKey = true,
                         IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.ASCII.GetBytes(
-                                Configuration.GetSection("AppSettings:Token").Value
-                            )
+                            Encoding.UTF8.GetBytes(Configuration["AppSettings:Token"])
                         ),
                         ValidateIssuer = false,
                         ValidateAudience = false,
                     };
                 });
-            services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+            services.AddHttpContextAccessor();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

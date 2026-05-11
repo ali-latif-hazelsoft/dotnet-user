@@ -1,18 +1,15 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using dotnet_user.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace dotnet_user.Data
 {
-    public class DataContext : DbContext
+    public class DataContext : IdentityDbContext<ApplicationUser, IdentityRole<int>, int>
     {
         public DataContext(DbContextOptions<DataContext> options)
             : base(options) { }
 
         public DbSet<User> Users { get; set; }
-        public DbSet<Member> Members { get; set; }
     }
 }

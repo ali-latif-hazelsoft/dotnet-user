@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using AutoMapper;
-using dotnet_user.Data;
+using dotnet_user.Constants;
 using dotnet_user.Dtos.User;
+using dotnet_user.Helpers;
 using dotnet_user.Models;
+using dotnet_user.Repositories;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace dotnet_user.Services.UserService
@@ -15,55 +17,48 @@ namespace dotnet_user.Services.UserService
     public class UserService : IUserService
     {
         private readonly IMapper _mapper;
-        private readonly DataContext _context;
+        private readonly IGenericRepository<User> _userRepository;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public UserService(IMapper mapper, DataContext context)
+        public UserService(
+            IMapper mapper,
+            IGenericRepository<User> userRepository,
+            IHttpContextAccessor httpContextAccessor
+        )
         {
             _mapper = mapper;
-            _context = context;
+            _userRepository = userRepository;
+            _httpContextAccessor = httpContextAccessor;
         }
 
-        private static IQueryable<T> ApplySorting<T>(
-            IQueryable<T> source,
-            string sortBy,
-            string sortDirection
-        )
+        private int GetLoggedInUserId()
         {
-            var parameter = Expression.Parameter(typeof(T), "x");
-            var propertyName = string.IsNullOrWhiteSpace(sortBy) ? "Id" : sortBy;
-
-            var property = Expression.PropertyOrField(parameter, propertyName);
-            var lambda = Expression.Lambda(property, parameter);
-
-            string methodName =
-                sortDirection?.ToLower() == "desc" ? "OrderByDescending" : "OrderBy";
-
-            var resultExpression = Expression.Call(
-                typeof(Queryable),
-                methodName,
-                new[] { typeof(T), property.Type },
-                source.Expression,
-                Expression.Quote(lambda)
+            var userIdValue = _httpContextAccessor.HttpContext?.User?.FindFirstValue(
+                ClaimTypes.NameIdentifier
             );
 
-            return source.Provider.CreateQuery<T>(resultExpression);
+            if (!int.TryParse(userIdValue, out int userId))
+            {
+                throw new UnauthorizedAccessException("No authenticated user found.");
+            }
+
+            return userId;
         }
 
-        private static string NormalizeEmail(string email)
+        private IQueryable<User> GetLoggedInUserUsersQuery(bool asNoTracking = true)
         {
-            return email?.Trim().ToLowerInvariant() ?? "";
+            int loggedInUserId = GetLoggedInUserId();
+
+            return _userRepository
+                .Query(asNoTracking)
+                .Where(u => u.ApplicationUserId == loggedInUserId);
         }
 
-        public async Task<ServiceResponse<PagedResponse<List<GetUserDto>>>> GetAllUsers(
-            UserQueryDto query
-        )
+        public async Task<PagedResponse<List<GetUserDto>>> GetAllUsers(UserQueryDto query)
         {
-            ServiceResponse<PagedResponse<List<GetUserDto>>> serviceResponse =
-                new ServiceResponse<PagedResponse<List<GetUserDto>>>();
-
             query ??= new UserQueryDto();
 
-            IQueryable<User> usersQuery = _context.Users.AsNoTracking();
+            IQueryable<User> usersQuery = GetLoggedInUserUsersQuery();
 
             if (!string.IsNullOrWhiteSpace(query.SearchTerm))
             {
@@ -72,14 +67,16 @@ namespace dotnet_user.Services.UserService
                 usersQuery = usersQuery.Where(u =>
                     (u.FirstName != null && u.FirstName.ToLower().Contains(search))
                     || (u.LastName != null && u.LastName.ToLower().Contains(search))
-                    || (u.Email != null && u.Email.ToLower().Contains(search))
+                    || (u.Email != null && u.Email.Trim().ToLower().Contains(search))
                 );
             }
 
-            usersQuery = ApplySorting(usersQuery, query.SortBy, query.SortDirection);
+            usersQuery = usersQuery.ApplySorting(query.SortBy, query.SortDirection);
 
-            int pageNumber = query.PageNumber <= 0 ? 1 : query.PageNumber;
-            int pageSize = query.PageSize <= 0 ? 10 : query.PageSize;
+            int pageNumber =
+                query.PageNumber <= 0 ? UserConstants.DefaultPageNumber : query.PageNumber;
+
+            int pageSize = query.PageSize <= 0 ? UserConstants.DefaultPageSize : query.PageSize;
 
             int totalRecords = await usersQuery.CountAsync();
             int totalPages = (int)Math.Ceiling(totalRecords / (float)pageSize);
@@ -91,7 +88,7 @@ namespace dotnet_user.Services.UserService
 
             List<GetUserDto> mappedUsers = _mapper.Map<List<GetUserDto>>(users);
 
-            serviceResponse.Data = new PagedResponse<List<GetUserDto>>
+            return new PagedResponse<List<GetUserDto>>
             {
                 Data = mappedUsers,
                 CurrentPage = pageNumber,
@@ -99,125 +96,97 @@ namespace dotnet_user.Services.UserService
                 TotalRecords = totalRecords,
                 TotalPages = totalPages,
             };
-
-            return serviceResponse;
         }
 
-        public async Task<ServiceResponse<GetUserDto>> GetUserById(int id)
+        public async Task<GetUserDto> GetUserById(int id)
         {
-            ServiceResponse<GetUserDto> serviceResponse = new ServiceResponse<GetUserDto>();
+            int loggedInUserId = GetLoggedInUserId();
 
-            User user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+            User user = await _userRepository
+                .Query()
+                .FirstOrDefaultAsync(u => u.Id == id && u.ApplicationUserId == loggedInUserId);
 
             if (user == null)
             {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "User not found.";
-                return serviceResponse;
+                throw new KeyNotFoundException("User not found.");
             }
 
-            serviceResponse.Data = _mapper.Map<GetUserDto>(user);
-            return serviceResponse;
+            return _mapper.Map<GetUserDto>(user);
         }
 
-        public async Task<ServiceResponse<GetUserDto>> AddUser(AddUserDto newUser)
+        public async Task<GetUserDto> AddUser(AddUserDto newUser)
         {
-            ServiceResponse<GetUserDto> serviceResponse = new ServiceResponse<GetUserDto>();
+            int loggedInUserId = GetLoggedInUserId();
+            string email = newUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
 
-            string email = NormalizeEmail(newUser.Email);
-
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "Email is required.";
-                return serviceResponse;
-            }
-
-            bool emailExists = await _context.Users.AnyAsync(u => u.Email.ToLower() == email);
-
-            if (emailExists)
-            {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "Email already exists.";
-                return serviceResponse;
-            }
-
-            User user = _mapper.Map<User>(newUser);
-            user.Email = newUser.Email.Trim();
-
-            await _context.Users.AddAsync(user);
-            await _context.SaveChangesAsync();
-
-            serviceResponse.Data = _mapper.Map<GetUserDto>(user);
-            serviceResponse.Message = "User created successfully.";
-
-            return serviceResponse;
-        }
-
-        public async Task<ServiceResponse<GetUserDto>> UpdateUser(UpdateUserDto updatedUser)
-        {
-            ServiceResponse<GetUserDto> serviceResponse = new ServiceResponse<GetUserDto>();
-
-            User user = await _context.Users.FirstOrDefaultAsync(u => u.Id == updatedUser.Id);
-
-            if (user == null)
-            {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "User not found.";
-                return serviceResponse;
-            }
-
-            string email = NormalizeEmail(updatedUser.Email);
-
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "Email is required.";
-                return serviceResponse;
-            }
-
-            bool emailExists = await _context.Users.AnyAsync(u =>
-                u.Id != updatedUser.Id && u.Email.ToLower() == email
+            bool emailExists = await _userRepository.AnyAsync(u =>
+                u.ApplicationUserId == loggedInUserId
+                && u.Email != null
+                && u.Email.Trim().ToLower() == email
             );
 
             if (emailExists)
             {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "Email already exists.";
-                return serviceResponse;
+                throw new ArgumentException("Email already exists.");
             }
 
-            _mapper.Map(updatedUser, user);
-            user.Email = updatedUser.Email.Trim();
+            User user = _mapper.Map<User>(newUser);
+            user.Email = newUser.Email.Trim();
+            user.ApplicationUserId = loggedInUserId;
 
-            await _context.SaveChangesAsync();
+            await _userRepository.AddAsync(user);
 
-            serviceResponse.Data = _mapper.Map<GetUserDto>(user);
-            serviceResponse.Message = "User updated successfully.";
-
-            return serviceResponse;
+            return _mapper.Map<GetUserDto>(user);
         }
 
-        public async Task<ServiceResponse<string>> DeleteUser(int id)
+        public async Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser)
         {
-            ServiceResponse<string> serviceResponse = new ServiceResponse<string>();
+            int loggedInUserId = GetLoggedInUserId();
+            string email = updatedUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
 
-            User user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            User user = await _userRepository
+                .Query(false)
+                .FirstOrDefaultAsync(u =>
+                    u.Id == updatedUser.Id && u.ApplicationUserId == loggedInUserId
+                );
 
             if (user == null)
             {
-                serviceResponse.Success = false;
-                serviceResponse.Message = "User not found.";
-                return serviceResponse;
+                throw new KeyNotFoundException("User not found.");
             }
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
+            bool emailExists = await _userRepository.AnyAsync(u =>
+                u.ApplicationUserId == loggedInUserId
+                && u.Id != updatedUser.Id
+                && u.Email != null
+                && u.Email.Trim().ToLower() == email
+            );
 
-            serviceResponse.Data = "User deleted successfully.";
-            serviceResponse.Message = "Success";
+            _mapper.Map(updatedUser, user);
+            user.Email = updatedUser.Email.Trim();
+            user.ApplicationUserId = loggedInUserId;
 
-            return serviceResponse;
+            _userRepository.Update(user);
+
+            return _mapper.Map<GetUserDto>(user);
+        }
+
+        public async Task<string> DeleteUser(int id)
+        {
+            int loggedInUserId = GetLoggedInUserId();
+
+            User user = await _userRepository
+                .Query(false)
+                .FirstOrDefaultAsync(u => u.Id == id && u.ApplicationUserId == loggedInUserId);
+
+            if (user == null)
+            {
+                throw new KeyNotFoundException("User not found.");
+            }
+
+            _userRepository.Remove(user);
+
+            return "User deleted successfully.";
         }
     }
 }

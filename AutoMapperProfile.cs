@@ -14,6 +14,7 @@ namespace dotnet_user
         {
             CreateMap<User, GetUserDto>();
             CreateMap<AddUserDto, User>();
+            CreateMap<UpdateUserDto, User>();
         }
     }
 }
