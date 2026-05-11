@@ -1,7 +1,9 @@
 using System.Text;
 using dotnet_user.Data;
+using dotnet_user.Dtos.Auth;
 using dotnet_user.Models;
 using dotnet_user.Repositories;
+using dotnet_user.Services.Auth;
 using dotnet_user.Services.Email;
 using dotnet_user.Services.UserService;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -67,6 +69,8 @@ namespace dotnet_user
             services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IEmailSender, SmtpEmailSender>();
+            services.Configure<EmailSettingsDto>(Configuration.GetSection("EmailSettings"));
+            services.AddScoped<IAuthService, AuthService>();
             services
                 .AddIdentity<ApplicationUser, IdentityRole<int>>()
                 .AddEntityFrameworkStores<DataContext>()
@@ -82,7 +86,12 @@ namespace dotnet_user
             });
 
             services
-                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddAuthentication(options =>
+                {
+                    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
                 .AddJwtBearer(options =>
                 {
                     options.TokenValidationParameters = new TokenValidationParameters

@@ -33,7 +33,7 @@ namespace dotnet_user.Services.UserService
 
         private int GetLoggedInUserId()
         {
-            var userIdValue = _httpContextAccessor.HttpContext?.User?.FindFirstValue(
+            string userIdValue = _httpContextAccessor.HttpContext?.User?.FindFirstValue(
                 ClaimTypes.NameIdentifier
             );
 
@@ -62,12 +62,21 @@ namespace dotnet_user.Services.UserService
 
             if (!string.IsNullOrWhiteSpace(query.SearchTerm))
             {
-                string search = query.SearchTerm.Trim().ToLower();
+                string search = ValidationHelpers.NormalizeString(query.SearchTerm);
 
                 usersQuery = usersQuery.Where(u =>
-                    (u.FirstName != null && u.FirstName.ToLower().Contains(search))
-                    || (u.LastName != null && u.LastName.ToLower().Contains(search))
-                    || (u.Email != null && u.Email.Trim().ToLower().Contains(search))
+                    (
+                        u.FirstName != null
+                        && ValidationHelpers.NormalizeString(u.FirstName).Contains(search)
+                    )
+                    || (
+                        u.LastName != null
+                        && ValidationHelpers.NormalizeString(u.LastName).Contains(search)
+                    )
+                    || (
+                        u.Email != null
+                        && ValidationHelpers.NormalizeString(u.Email).Contains(search)
+                    )
                 );
             }
 
@@ -117,12 +126,12 @@ namespace dotnet_user.Services.UserService
         public async Task<GetUserDto> AddUser(AddUserDto newUser)
         {
             int loggedInUserId = GetLoggedInUserId();
-            string email = newUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+            string email = ValidationHelpers.NormalizeString(newUser.Email);
 
             bool emailExists = await _userRepository.AnyAsync(u =>
                 u.ApplicationUserId == loggedInUserId
                 && u.Email != null
-                && u.Email.Trim().ToLower() == email
+                && ValidationHelpers.NormalizeString(u.Email) == email
             );
 
             if (emailExists)
@@ -131,7 +140,7 @@ namespace dotnet_user.Services.UserService
             }
 
             User user = _mapper.Map<User>(newUser);
-            user.Email = newUser.Email.Trim();
+            user.Email = email;
             user.ApplicationUserId = loggedInUserId;
 
             await _userRepository.AddAsync(user);
@@ -142,7 +151,7 @@ namespace dotnet_user.Services.UserService
         public async Task<GetUserDto> UpdateUser(UpdateUserDto updatedUser)
         {
             int loggedInUserId = GetLoggedInUserId();
-            string email = updatedUser.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+            string email = ValidationHelpers.NormalizeString(updatedUser.Email);
 
             User user = await _userRepository
                 .Query(false)
@@ -159,11 +168,11 @@ namespace dotnet_user.Services.UserService
                 u.ApplicationUserId == loggedInUserId
                 && u.Id != updatedUser.Id
                 && u.Email != null
-                && u.Email.Trim().ToLower() == email
+                && ValidationHelpers.NormalizeString(u.Email) == email
             );
 
             _mapper.Map(updatedUser, user);
-            user.Email = updatedUser.Email.Trim();
+            user.Email = email;
             user.ApplicationUserId = loggedInUserId;
 
             _userRepository.Update(user);

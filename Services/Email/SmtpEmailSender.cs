@@ -1,50 +1,66 @@
+using System;
 using System.Net;
 using System.Net.Mail;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+using dotnet_user.Dtos.Auth;
+using Microsoft.Extensions.Options;
 
 namespace dotnet_user.Services.Email
 {
     public class SmtpEmailSender : IEmailSender
     {
-        private readonly IConfiguration _configuration;
+        private readonly EmailSettingsDto _emailSettings;
 
-        public SmtpEmailSender(IConfiguration configuration, ILogger<SmtpEmailSender> logger)
+        public SmtpEmailSender(IOptions<EmailSettingsDto> emailSettingsOptions)
         {
-            _configuration = configuration;
+            if (emailSettingsOptions == null)
+            {
+                throw new ArgumentNullException(nameof(emailSettingsOptions));
+            }
+
+            _emailSettings =
+                emailSettingsOptions.Value
+                ?? throw new InvalidOperationException("Email settings are missing.");
         }
 
         public async Task SendEmailAsync(string email, string subject, string htmlMessage)
         {
-            var smtpSection = _configuration.GetSection("EmailSettings");
-
-            string host = smtpSection["Host"] ?? "";
-            int port = int.Parse(smtpSection["Port"] ?? "587");
-            string fromEmail = smtpSection["FromEmail"] ?? "";
-            string username = smtpSection["Username"] ?? "";
-            string password = smtpSection["Password"] ?? "";
-            bool enableSsl = bool.Parse(smtpSection["EnableSsl"] ?? "true");
-
-            using var client = new SmtpClient(host, port)
+            if (string.IsNullOrWhiteSpace(email))
             {
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                UseDefaultCredentials = false,
-                EnableSsl = enableSsl,
-                Credentials = new NetworkCredential(username, password),
-            };
+                throw new ArgumentException("Recipient email is required.", nameof(email));
+            }
 
-            using var message = new MailMessage
+            if (string.IsNullOrWhiteSpace(subject))
             {
-                From = new MailAddress(fromEmail),
-                Subject = subject,
-                Body = htmlMessage,
-                IsBodyHtml = true,
-            };
+                throw new ArgumentException("Email subject is required.", nameof(subject));
+            }
 
-            message.To.Add(email);
+            if (string.IsNullOrWhiteSpace(htmlMessage))
+            {
+                throw new ArgumentException("Email message is required.", nameof(htmlMessage));
+            }
 
-            await client.SendMailAsync(message);
+            using (SmtpClient client = new SmtpClient(_emailSettings.Host, _emailSettings.Port))
+            {
+                client.DeliveryMethod = SmtpDeliveryMethod.Network;
+                client.UseDefaultCredentials = false;
+                client.EnableSsl = _emailSettings.EnableSsl;
+                client.Credentials = new NetworkCredential(
+                    _emailSettings.Username,
+                    _emailSettings.Password
+                );
+
+                using (MailMessage message = new MailMessage())
+                {
+                    message.From = new MailAddress(_emailSettings.FromEmail);
+                    message.Subject = subject;
+                    message.Body = htmlMessage;
+                    message.IsBodyHtml = true;
+                    message.To.Add(email);
+
+                    await client.SendMailAsync(message);
+                }
+            }
         }
     }
 }
